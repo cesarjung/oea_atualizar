@@ -4,6 +4,7 @@
 #    - A, D, AK -> data (serial do Google Sheets)
 #    - E, L..Y  -> número
 # Demais colunas permanecem intactas (texto).
+# 3) Ao final, grava timestamp em RESUMO!A2 (America/Sao_Paulo).
 
 import io
 import re
@@ -27,6 +28,13 @@ try:
     HAS_FMT = True
 except Exception:
     HAS_FMT = False
+
+# Timezone (preferir zoneinfo; cai para local caso indisponível)
+try:
+    from zoneinfo import ZoneInfo
+    TZ = ZoneInfo("America/Sao_Paulo")
+except Exception:
+    TZ = None
 
 # ===================== CONFIG =====================
 CAMINHO_CRED = "credenciais.json"
@@ -179,6 +187,21 @@ def to_float_br_us(val: str):
     except:
         return None
 
+# ===================== TIMESTAMP RESUMO =====================
+def gravar_timestamp_resumo(sh):
+    """Grava timestamp em RESUMO!A2 no formato dd/mm/yyyy HH:MM:SS (America/Sao_Paulo)."""
+    ts = (datetime.now(TZ) if TZ else datetime.now()).strftime("%d/%m/%Y %H:%M:%S")
+    try:
+        try:
+            ws_resumo = sh.worksheet("RESUMO")
+        except WorksheetNotFound:
+            # caso não exista, cria uma aba simples com ao menos 2 linhas e 2 colunas
+            ws_resumo = sh.add_worksheet(title="RESUMO", rows=10, cols=5)
+        safe_call(lambda: ws_resumo.update("A2", ts, value_input_option="RAW"), "atualizar RESUMO!A2")
+        print(f"🕒 RESUMO!A2 atualizado com '{ts}'.")
+    except Exception as e:
+        print(f"⚠️  Não foi possível atualizar RESUMO!A2: {e}")
+
 # ===================== MAIN =====================
 def main():
     print("🔐 Autenticando...")
@@ -283,6 +306,8 @@ def main():
     n_rows = len(data_rows)  # sem cabeçalho
     if n_rows == 0:
         print("ℹ️ Sem linhas de dados; nada para converter.")
+        # mesmo sem linhas, ainda gravamos timestamp em RESUMO
+        gravar_timestamp_resumo(sh)
         print("\n✅ Concluído.")
         return
 
@@ -331,6 +356,9 @@ def main():
                     format_cell_range(ws, f"{letter}:{letter}", fmt_date)
         except Exception as e:
             print(f"⚠️  Não consegui aplicar formatação de data (ok continuar): {e}")
+
+    # === Timestamp no RESUMO!A2 ===
+    gravar_timestamp_resumo(sh)
 
     print("\n✅ Concluído! A:AK limpo e colado; **AG preservada**; só A, D, AK (data) e E, L..Y (número) convertidas. Colunas além de AK não foram alteradas.")
 
