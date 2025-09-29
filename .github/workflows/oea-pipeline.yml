@@ -1,4 +1,4 @@
-name: OEA - Pipeline (debug)
+name: OEA - Pipeline
 
 on:
   workflow_dispatch:
@@ -13,20 +13,9 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 120
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Show repo tree
-        run: |
-          pwd
-          ls -la
-          echo "----- .github/workflows"
-          ls -la .github/workflows || true
-
-      - name: Ensure logs dir
-        run: mkdir -p logs
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -34,84 +23,28 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # NÃO imprime segredo. Apenas indica qual secret está presente.
-      - name: Detect secrets
-        env:
-          HAS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
-          HAS_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: |
-          if [ -n "${HAS_B64}" ]; then echo "✅ GOOGLE_CREDENTIALS_B64 definido"; else echo "❌ GOOGLE_CREDENTIALS_B64 ausente"; fi
-          if [ -n "${HAS_JSON}" ]; then echo "✅ GOOGLE_CREDENTIALS definido"; else echo "❌ GOOGLE_CREDENTIALS ausente"; fi
-
-      - name: Create credenciais.json from secrets
-        shell: bash
+      # Decodifica sem imprimir o secret e valida o JSON; mostra o client_email para você compartilhar as planilhas.
+      - name: Decode and validate credentials.json
         env:
           CREDS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
-          CREDS_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
-          set -euo pipefail
-          if [[ -n "${CREDS_B64:-}" ]]; then
-            python - <<'PY'
-import os,base64,json,sys
-b64=os.environ.get("CREDS_B64")
-data=base64.b64decode(b64)
-open("credenciais.json","wb").write(data)
-raw=open("credenciais.json","rb").read()
-print("credenciais.json bytes:", len(raw))
-json.loads(raw.decode("utf-8"))
-print("OK: credenciais.json (from GOOGLE_CREDENTIALS_B64)")
-PY
-          elif [[ -n "${CREDS_JSON:-}" ]]; then
-            python - <<'PY'
-import os,json,sys
-val=os.environ.get("CREDS_JSON")
-open("credenciais.json","w",encoding="utf-8").write(val)
-raw=open("credenciais.json","rb").read()
-print("credenciais.json bytes:", len(raw))
-json.loads(raw.decode("utf-8"))
-print("OK: credenciais.json (from GOOGLE_CREDENTIALS)")
-PY
-          else
-            echo "ERRO: nenhum secret encontrado (defina GOOGLE_CREDENTIALS_B64 ou GOOGLE_CREDENTIALS)."
-            exit 2
-          fi
+          python -c "import os,base64,sys; b=os.environ.get('CREDS_B64'); \
+            open('credenciais.json','wb').write(base64.b64decode(b)) if b else sys.exit(2)"
+          python -c "import json; j=json.load(open('credenciais.json','r',encoding='utf-8')); \
+            print('Service Account email:', j['client_email'])"
 
       - name: Install dependencies
         run: |
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            echo "requirements.txt ausente — instalando deps mínimas"
             pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting oauth2client pandas numpy
           fi
 
-      - name: Sanity check (scripts existem?)
+      - name: Sanity check
         run: |
-          ok=1
-          for f in atualizar_oea.py obras_compilar_csv.py replicar_bd_mensal.py replicar_esteira_oea.py; do
-            if [ -f "$f" ]; then
-              echo "✅ $f"
-            else
-              echo "⚠️  faltando: $f"; ok=0
-            fi
-          done
-          if [ $ok -eq 0 ]; then echo "Alguns arquivos faltando (acima)"; fi
+          [ -f atualizar_oea.py ] || { echo 'missing atualizar_oea.py'; exit 1; }
+          mkdir -p logs
 
-      # não falha o job aqui — queremos sempre subir logs
       - name: Run pipeline
-        continue-on-error: true
-        run: |
-          set -x
-          python -u -X utf8 atualizar_oea.py | tee logs/pipeline_stdout.log
-
-      - name: Upload logs/artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: oea-logs
-          path: |
-            logs/**
-            credenciais.json
-            requirements.txt
-            *.py
-          if-no-files-found: warn
+        run: python -u -X utf8 atualizar_oea.py
