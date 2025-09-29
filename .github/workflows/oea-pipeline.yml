@@ -24,11 +24,21 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Create credentials file from secret
-        run: printf '%s' "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
-
-      - name: Validate credentials JSON
-        run: python -c "import json; json.load(open('credenciais.json','r',encoding='utf-8')); print('OK')"
+      # NÃO imprime o secret. Passa via env p/ o Python decodificar.
+      - name: Decode credentials (from GOOGLE_CREDENTIALS_B64)
+        env:
+          CREDS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
+        run: |
+          python - <<'PY'
+import os, base64, json, sys
+b64 = os.environ.get("CREDS_B64")
+if not b64:
+    print("Secret GOOGLE_CREDENTIALS_B64 ausente."); sys.exit(2)
+data = base64.b64decode(b64)
+open("credenciais.json","wb").write(data)
+json.load(open("credenciais.json","r",encoding="utf-8"))
+print("credenciais.json OK")
+PY
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -39,9 +49,6 @@ jobs:
       - name: Sanity check (scripts)
         run: |
           [ -f atualizar_oea.py ] || { echo 'missing atualizar_oea.py'; exit 1; }
-          [ -f obras_compilar_csv.py ] || echo 'warn: obras_compilar_csv.py ausente'
-          [ -f replicar_bd_mensal.py ] || echo 'warn: replicar_bd_mensal.py ausente'
-          [ -f replicar_esteira_oea.py ] || echo 'warn: replicar_esteira_oea.py ausente'
 
       - name: Run pipeline
         run: python -u -X utf8 atualizar_oea.py
