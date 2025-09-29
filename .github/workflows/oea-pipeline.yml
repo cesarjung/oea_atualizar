@@ -13,6 +13,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,15 +24,14 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # Decodifica sem imprimir o secret e valida o JSON; mostra o client_email para você compartilhar as planilhas.
-      - name: Decode and validate credentials.json
+      - name: Write credenciais.json from GOOGLE_CREDENTIALS
         env:
-          CREDS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
-          python -c "import os,base64,sys; b=os.environ.get('CREDS_B64'); \
-            open('credenciais.json','wb').write(base64.b64decode(b)) if b else sys.exit(2)"
-          python -c "import json; j=json.load(open('credenciais.json','r',encoding='utf-8')); \
-            print('Service Account email:', j['client_email'])"
+          python -c "import os,sys,json,pathlib; v=os.environ.get('GOOGLE_CREDENTIALS'); \
+            (print('Secret GOOGLE_CREDENTIALS ausente') or sys.exit(2)) if not v else None; \
+            json.loads(v); pathlib.Path('credenciais.json').write_text(v, encoding='utf-8'); \
+            print('credenciais.json OK')"
 
       - name: Install dependencies
         run: |
@@ -41,10 +41,8 @@ jobs:
             pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting oauth2client pandas numpy
           fi
 
-      - name: Sanity check
-        run: |
-          [ -f atualizar_oea.py ] || { echo 'missing atualizar_oea.py'; exit 1; }
-          mkdir -p logs
+      - name: Ensure logs dir
+        run: mkdir -p logs
 
       - name: Run pipeline
         run: python -u -X utf8 atualizar_oea.py
