@@ -27,14 +27,9 @@ jobs:
           cache: "pip"
 
       - name: Create credentials file from secret
-        shell: bash
         run: |
-          echo "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
-          python - <<'PY'
-import json
-json.load(open("credenciais.json","r",encoding="utf-8"))
-print("✅ credenciais.json OK")
-PY
+          printf '%s' "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
+          python -c "import json; json.load(open('credenciais.json','r',encoding='utf-8')); print('✅ credenciais.json OK')"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
