@@ -1,0 +1,51 @@
+name: OEA - Pipeline
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:00, 09:00, 12:00 e 15:00 em America/Sao_Paulo (UTC-3)
+    # Em UTC: 10:00, 12:00, 15:00, 18:00
+    - cron: "0 10,12,15,18 * * *"
+
+env:
+  TZ: America/Sao_Paulo
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Create credentials file from secret
+        shell: bash
+        run: |
+          echo "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
+          python - <<'PY'
+import json
+json.load(open("credenciais.json","r",encoding="utf-8"))
+print("✅ credenciais.json OK")
+PY
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        run: python -u -X utf8 atualizar_oea.py
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oea-logs
+          path: logs/*.log
+          if-no-files-found: warn
