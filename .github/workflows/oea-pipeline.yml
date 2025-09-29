@@ -24,31 +24,75 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      # NÃO imprime o secret. Passa via env p/ o Python decodificar.
-      - name: Decode credentials (from GOOGLE_CREDENTIALS_B64)
+      # NÃO imprime secret. Aceita B64 ou JSON cru.
+      - name: Create credenciais.json from secrets
+        shell: bash
         env:
           CREDS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
+          CREDS_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
-          python - <<'PY'
-import os, base64, json, sys
-b64 = os.environ.get("CREDS_B64")
-if not b64:
-    print("Secret GOOGLE_CREDENTIALS_B64 ausente."); sys.exit(2)
-data = base64.b64decode(b64)
+          set -euo pipefail
+          if [[ -n "${CREDS_B64:-}" ]]; then
+            python - <<'PY'
+import os,base64,sys,json,io
+b64=os.environ.get("CREDS_B64","")
+data=base64.b64decode(b64)
 open("credenciais.json","wb").write(data)
-json.load(open("credenciais.json","r",encoding="utf-8"))
-print("credenciais.json OK")
+raw=open("credenciais.json","rb").read()
+print("credenciais.json bytes:", len(raw))
+json.loads(raw.decode("utf-8"))
+print("credenciais.json OK (from GOOGLE_CREDENTIALS_B64)")
 PY
+          elif [[ -n "${CREDS_JSON:-}" ]]; then
+            python - <<'PY'
+import os,sys,json
+val=os.environ.get("CREDS_JSON","")
+# grava exatamente o que veio, sem ecoar em stdout
+open("credenciais.json","w",encoding="utf-8").write(val)
+raw=open("credenciais.json","rb").read()
+print("credenciais.json bytes:", len(raw))
+json.loads(raw.decode("utf-8"))
+print("credenciais.json OK (from GOOGLE_CREDENTIALS)")
+PY
+          else
+            echo "Nenhum secret encontrado: defina GOOGLE_CREDENTIALS_B64 (recomendado) ou GOOGLE_CREDENTIALS."
+            exit 2
+          fi
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        shell: bash
+        run: |
+          set -e
+          if [[ -f requirements.txt ]]; then
+            pip install -r requirements.txt
+          else
+            pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting oauth2client pandas numpy
+          fi
 
       - name: Ensure logs dir
         run: mkdir -p logs
 
       - name: Sanity check (scripts)
+        shell: bash
         run: |
-          [ -f atualizar_oea.py ] || { echo 'missing atualizar_oea.py'; exit 1; }
+          set -e
+          [[ -f atualizar_oea.py ]] || { echo "missing atualizar_oea.py"; exit 1; }
+          ls -la
 
       - name: Run pipeline
-        run: python -u -X utf8 atualizar_oea.py
+        shell: bash
+        run: |
+          set -e
+          python -u -X utf8 atualizar_oea.py | tee logs/pipeline_stdout.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oea-logs
+          path: |
+            logs/**
+            credenciais.json
+            requirements.txt
+            *.py
+          if-no-files-found: warn
