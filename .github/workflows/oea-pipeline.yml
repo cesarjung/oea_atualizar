@@ -3,9 +3,7 @@ name: OEA - Pipeline
 on:
   workflow_dispatch:
   schedule:
-    # 07:00, 09:00, 12:00 e 15:00 em America/Sao_Paulo (UTC-3)
-    # UTC: 10:00, 12:00, 15:00, 18:00
-    - cron: "0 10,12,15,18 * * *"
+    - cron: "0 10,12,15,18 * * *"  # 07:00, 09:00, 12:00, 15:00 America/Sao_Paulo
 
 env:
   TZ: America/Sao_Paulo
@@ -20,66 +18,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show repo tree (quick diag)
-        run: |
-          pwd
-          ls -la
-          echo "-----"
-          ls -la .github/workflows || true
-
-      - name: Ensure logs dir
-        run: mkdir -p logs
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Create credentials file from secret (and validate)
-        run: |
-          if [ -z "${{ secrets.GOOGLE_CREDENTIALS }}" ]; then
-            echo "❌ Secret GOOGLE_CREDENTIALS não encontrado."
-            exit 2
-          fi
-          printf '%s' "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
-          python -c "import json,sys; json.load(open('credenciais.json','r',encoding='utf-8')); print('✅ credenciais.json OK')"
+      - name: Create credentials file from secret
+        run: printf '%s' "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
+
+      - name: Validate credentials JSON
+        run: python -c "import json; json.load(open('credenciais.json','r',encoding='utf-8')); print('OK')"
 
       - name: Install dependencies
-        run: |
-          if [ ! -f requirements.txt ]; then
-            echo "⚠️ requirements.txt não existe. Instalando deps mínimas…"
-            pip install gspread google-api-python-client google-auth google-auth-httplib2 oauth2client pandas numpy gspread-formatting
-          else
-            pip install -r requirements.txt
-          fi
+        run: pip install -r requirements.txt
 
-      - name: Sanity check scripts
+      - name: Ensure logs dir
+        run: mkdir -p logs
+
+      - name: Sanity check (scripts)
         run: |
-          MISSING=0
-          for f in atualizar_oea.py obras_compilar_csv.py replicar_bd_mensal.py replicar_esteira_oea.py; do
-            if [ -f "$f" ]; then
-              echo "✅ Encontrado: $f"
-            else
-              echo "❌ Faltando: $f"
-              MISSING=1
-            fi
-          done
-          [ "$MISSING" -eq 0 ] || exit 4
+          [ -f atualizar_oea.py ] || { echo 'missing atualizar_oea.py'; exit 1; }
+          [ -f obras_compilar_csv.py ] || echo 'warn: obras_compilar_csv.py ausente'
+          [ -f replicar_bd_mensal.py ] || echo 'warn: replicar_bd_mensal.py ausente'
+          [ -f replicar_esteira_oea.py ] || echo 'warn: replicar_esteira_oea.py ausente'
 
       - name: Run pipeline
-        run: |
-          set -e
-          python -u -X utf8 atualizar_oea.py | tee logs/pipeline_stdout.log
-
-      - name: Upload logs/artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: oea-logs
-          path: |
-            logs/**
-            credenciais.json
-            requirements.txt
-            *.py
-          if-no-files-found: warn
+        run: python -u -X utf8 atualizar_oea.py
