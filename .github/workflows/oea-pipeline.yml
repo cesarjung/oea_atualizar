@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show repo tree
+      - name: Show repo tree (quick diag)
         run: |
           pwd
           ls -la
@@ -43,19 +43,7 @@ jobs:
             exit 2
           fi
           printf '%s' "${{ secrets.GOOGLE_CREDENTIALS }}" > credenciais.json
-          python - <<'PY'
-import json,sys
-try:
-    j=json.load(open("credenciais.json","r",encoding="utf-8"))
-    assert isinstance(j, dict)
-    print("✅ credenciais.json OK (service account)")
-except Exception as e:
-    print("❌ credenciais.json inválido:", e)
-    sys.exit(3)
-PY
-
-      - name: Show Python version
-        run: python -V
+          python -c "import json,sys; json.load(open('credenciais.json','r',encoding='utf-8')); print('✅ credenciais.json OK')"
 
       - name: Install dependencies
         run: |
@@ -68,6 +56,7 @@ PY
 
       - name: Sanity check scripts
         run: |
+          MISSING=0
           for f in atualizar_oea.py obras_compilar_csv.py replicar_bd_mensal.py replicar_esteira_oea.py; do
             if [ -f "$f" ]; then
               echo "✅ Encontrado: $f"
@@ -76,9 +65,7 @@ PY
               MISSING=1
             fi
           done
-          if [ "${MISSING:-0}" = "1" ]; then
-            exit 4
-          fi
+          [ "$MISSING" -eq 0 ] || exit 4
 
       - name: Run pipeline
         run: |
