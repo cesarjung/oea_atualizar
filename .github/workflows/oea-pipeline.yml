@@ -1,4 +1,4 @@
-name: OEA - Pipeline
+name: OEA - Pipeline (debug)
 
 on:
   workflow_dispatch:
@@ -18,13 +18,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show repo tree
+        run: |
+          pwd
+          ls -la
+          echo "----- .github/workflows"
+          ls -la .github/workflows || true
+
+      - name: Ensure logs dir
+        run: mkdir -p logs
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # NÃO imprime secret. Aceita B64 ou JSON cru.
+      # NÃO imprime segredo. Apenas indica qual secret está presente.
+      - name: Detect secrets
+        env:
+          HAS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
+          HAS_JSON: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          if [ -n "${HAS_B64}" ]; then echo "✅ GOOGLE_CREDENTIALS_B64 definido"; else echo "❌ GOOGLE_CREDENTIALS_B64 ausente"; fi
+          if [ -n "${HAS_JSON}" ]; then echo "✅ GOOGLE_CREDENTIALS definido"; else echo "❌ GOOGLE_CREDENTIALS ausente"; fi
+
       - name: Create credenciais.json from secrets
         shell: bash
         env:
@@ -34,58 +52,59 @@ jobs:
           set -euo pipefail
           if [[ -n "${CREDS_B64:-}" ]]; then
             python - <<'PY'
-import os,base64,sys,json,io
-b64=os.environ.get("CREDS_B64","")
+import os,base64,json,sys
+b64=os.environ.get("CREDS_B64")
 data=base64.b64decode(b64)
 open("credenciais.json","wb").write(data)
 raw=open("credenciais.json","rb").read()
 print("credenciais.json bytes:", len(raw))
 json.loads(raw.decode("utf-8"))
-print("credenciais.json OK (from GOOGLE_CREDENTIALS_B64)")
+print("OK: credenciais.json (from GOOGLE_CREDENTIALS_B64)")
 PY
           elif [[ -n "${CREDS_JSON:-}" ]]; then
             python - <<'PY'
-import os,sys,json
-val=os.environ.get("CREDS_JSON","")
-# grava exatamente o que veio, sem ecoar em stdout
+import os,json,sys
+val=os.environ.get("CREDS_JSON")
 open("credenciais.json","w",encoding="utf-8").write(val)
 raw=open("credenciais.json","rb").read()
 print("credenciais.json bytes:", len(raw))
 json.loads(raw.decode("utf-8"))
-print("credenciais.json OK (from GOOGLE_CREDENTIALS)")
+print("OK: credenciais.json (from GOOGLE_CREDENTIALS)")
 PY
           else
-            echo "Nenhum secret encontrado: defina GOOGLE_CREDENTIALS_B64 (recomendado) ou GOOGLE_CREDENTIALS."
+            echo "ERRO: nenhum secret encontrado (defina GOOGLE_CREDENTIALS_B64 ou GOOGLE_CREDENTIALS)."
             exit 2
           fi
 
       - name: Install dependencies
-        shell: bash
         run: |
-          set -e
-          if [[ -f requirements.txt ]]; then
+          if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
+            echo "requirements.txt ausente — instalando deps mínimas"
             pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting oauth2client pandas numpy
           fi
 
-      - name: Ensure logs dir
-        run: mkdir -p logs
-
-      - name: Sanity check (scripts)
-        shell: bash
+      - name: Sanity check (scripts existem?)
         run: |
-          set -e
-          [[ -f atualizar_oea.py ]] || { echo "missing atualizar_oea.py"; exit 1; }
-          ls -la
+          ok=1
+          for f in atualizar_oea.py obras_compilar_csv.py replicar_bd_mensal.py replicar_esteira_oea.py; do
+            if [ -f "$f" ]; then
+              echo "✅ $f"
+            else
+              echo "⚠️  faltando: $f"; ok=0
+            fi
+          done
+          if [ $ok -eq 0 ]; then echo "Alguns arquivos faltando (acima)"; fi
 
+      # não falha o job aqui — queremos sempre subir logs
       - name: Run pipeline
-        shell: bash
+        continue-on-error: true
         run: |
-          set -e
+          set -x
           python -u -X utf8 atualizar_oea.py | tee logs/pipeline_stdout.log
 
-      - name: Upload logs
+      - name: Upload logs/artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
