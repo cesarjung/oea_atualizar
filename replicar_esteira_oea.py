@@ -7,6 +7,7 @@ para a aba Base_Esteira em OUTRA planilha, colando em A2.
 - Logs de cada etapa (leitura, limpeza, escrita, ETA)
 """
 
+import sys
 import time
 from datetime import datetime
 from typing import List
@@ -28,7 +29,24 @@ COL_INICIO  = "A"
 COL_FIM     = "AN"
 
 CHUNK_ROWS  = 8000   # ajuste se quiser
+
+MAX_API_RETRIES = 6
+BASE_SLEEP = 2.0
 # =====================
+
+def safe_call(fn, desc="chamada API"):
+    """Retry com backoff linear em erros transientes 5xx / 429 da API Google."""
+    for i in range(1, MAX_API_RETRIES + 1):
+        try:
+            return fn()
+        except APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status not in (429, 500, 502, 503, 504) or i == MAX_API_RETRIES:
+                raise
+            wait = BASE_SLEEP * i
+            print(f"⚠️  {desc} falhou ({status}). Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s…")
+            time.sleep(wait)
+    raise RuntimeError(f"Falhou após {MAX_API_RETRIES} tentativas: {desc}")
 
 def auth():
     scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -76,26 +94,26 @@ def main():
     t_read0 = time.time()
     print("📥 Lendo cabeçalho (A3:AN3) como valores nativos…")
     try:
-        header_rows = ws_src.get(
+        header_rows = safe_call(lambda: ws_src.get(
             f"{COL_INICIO}3:{COL_FIM}3",
             value_render_option="UNFORMATTED_VALUE",
             date_time_render_option="SERIAL_NUMBER",
-        )
+        ), "leitura cabeçalho")
     except TypeError:
         print("ℹ️ gspread antigo → fallback sem parâmetros de renderização.")
-        header_rows = ws_src.get(f"{COL_INICIO}3:{COL_FIM}3")
+        header_rows = safe_call(lambda: ws_src.get(f"{COL_INICIO}3:{COL_FIM}3"), "leitura cabeçalho")
     header = header_rows[0] if header_rows else []
     total_cols = len(header) if header else 0
 
     print("📥 Lendo dados (A4:AN) como valores nativos…")
     try:
-        data = ws_src.get(
+        data = safe_call(lambda: ws_src.get(
             f"{COL_INICIO}4:{COL_FIM}",
             value_render_option="UNFORMATTED_VALUE",
             date_time_render_option="SERIAL_NUMBER",
-        )
+        ), "leitura dados")
     except TypeError:
-        data = ws_src.get(f"{COL_INICIO}4:{COL_FIM}")
+        data = safe_call(lambda: ws_src.get(f"{COL_INICIO}4:{COL_FIM}"), "leitura dados")
 
     # Remove linhas 100% vazias ao final
     while data and all((c == "" or c is None) for c in data[-1]):
@@ -110,7 +128,7 @@ def main():
 
     if not header and not data:
         print("⚠️ Nada para copiar. Limpando destino e finalizando com timestamp.")
-        ws_dst.batch_clear([f"{COL_INICIO}:{COL_FIM}"])
+        safe_call(lambda: ws_dst.batch_clear([f"{COL_INICIO}:{COL_FIM}"]), "batch_clear destino")
         set_status(ws_dst, datetime.now().strftime("Atualizado em: %d/%m/%Y %H:%M:%S"))
         print(f"🟢 Concluído (sem dados). ⏱️ total: {time.time() - t0:.2f}s")
         return
@@ -119,17 +137,18 @@ def main():
     t_clear0 = time.time()
     print("🧹 Limpando destino (A:AN)…")
     try:
-        ws_dst.batch_clear([f"{COL_INICIO}:{COL_FIM}"])
+        safe_call(lambda: ws_dst.batch_clear([f"{COL_INICIO}:{COL_FIM}"]), "batch_clear destino")
     except APIError as e:
         print(f"⚠️ batch_clear falhou: {e}. Tentando clear() geral…")
-        ws_dst.clear()
+        safe_call(lambda: ws_dst.clear(), "clear destino")
     t_clear1 = time.time()
     print(f"✅ Limpeza concluída. ⏱️ {t_clear1 - t_clear0:.2f}s")
 
     # -------- ESCRITA --------
     if header:
         print("✍️ Gravando cabeçalho em A2…")
-        ws_dst.update(a1_range(COL_INICIO, 2, COL_FIM, 2), [header], raw=True)
+        safe_call(lambda: ws_dst.update([header], a1_range(COL_INICIO, 2, COL_FIM, 2), raw=True),
+                  "gravar cabeçalho")
 
     if data:
         total_rows = len(data)
@@ -141,7 +160,8 @@ def main():
             chunk = data[start:start + CHUNK_ROWS]
             end_row = row_cursor + len(chunk) - 1
             t_b0 = time.time()
-            ws_dst.update(a1_range(COL_INICIO, row_cursor, COL_FIM, end_row), chunk, raw=True)
+            safe_call(lambda: ws_dst.update(chunk, a1_range(COL_INICIO, row_cursor, COL_FIM, end_row), raw=True),
+                      f"gravar linhas {row_cursor}-{end_row}")
             t_b1 = time.time()
             print(f"   • Gravado {row_cursor}-{end_row} ({len(chunk)} linhas) | ⏱️ {t_b1 - t_b0:.2f}s")
 
@@ -165,3 +185,4 @@ if __name__ == "__main__":
         import traceback
         print("❌ ERRO FATAL:")
         traceback.print_exc()
+        sys.exit(1)

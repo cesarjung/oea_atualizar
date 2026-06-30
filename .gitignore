@@ -1,0 +1,26 @@
+# Credenciais — NUNCA commitar
+credenciais.json
+*.json.key
+client_secret*.json
+
+# Logs
+logs/
+*.log
+
+# CSVs gerados
+Historico_Diario.csv
+Historico_Mensal.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
