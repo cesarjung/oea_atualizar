@@ -63,6 +63,7 @@ def auth_clients():
     ]
     creds = Credentials.from_service_account_file(CAMINHO_CRED, scopes=scopes)
     gc = gspread.authorize(creds)
+    gc.set_timeout(60)  # falha rapido em call travada; safe_call faz o backoff
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
     return gc, drive
 

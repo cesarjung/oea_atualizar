@@ -61,7 +61,9 @@ def auth():
         "https://www.googleapis.com/auth/drive",
     ]
     creds = Credentials.from_service_account_file(CAMINHO_CRED, scopes=scopes)
-    return gspread.authorize(creds)
+    gc = gspread.authorize(creds)
+    gc.set_timeout(60)  # falha rapido em call travada; safe_call faz o backoff
+    return gc
 
 def a1_range(c1, r1, c2, r2):
     return f"{c1}{r1}:{c2}{r2}"

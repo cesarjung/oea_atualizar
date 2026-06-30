@@ -50,6 +50,7 @@ def auth_clients():
     creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
     gc = gspread.authorize(creds)
+    gc.set_timeout(60)  # falha rapido em call travada
     return drive, gc
 
 
