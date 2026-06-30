@@ -51,7 +51,7 @@ def normalize_width(rows: List[List], total_cols: int) -> List[List]:
 
 def set_status(ws, text):
     try:
-        ws.update("A1", text, raw=True)
+        ws.update([[text]], "A1", raw=True)
     except Exception as e:
         print(f"⚠️ Falha ao escrever status em A1: {e}")
 
