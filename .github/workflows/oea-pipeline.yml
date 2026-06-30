@@ -9,6 +9,11 @@ env:
   TZ: America/Sao_Paulo
   PYTHONUNBUFFERED: "1"
 
+# Impede execuções simultâneas (schedule + manual) escrevendo a mesma planilha
+concurrency:
+  group: oea-pipeline
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -38,7 +43,7 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting oauth2client pandas numpy
+            pip install google-api-python-client google-auth google-auth-httplib2 gspread gspread-formatting pandas numpy
           fi
 
       - name: Ensure logs dir

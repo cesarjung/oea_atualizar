@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import List
 
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError
 
 # ====== CONFIG ======
@@ -49,8 +49,11 @@ def safe_call(fn, desc="chamada API"):
     raise RuntimeError(f"Falhou após {MAX_API_RETRIES} tentativas: {desc}")
 
 def auth():
-    scopes = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CAMINHO_CRED, scopes)
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_file(CAMINHO_CRED, scopes=scopes)
     return gspread.authorize(creds)
 
 def a1_range(c1, r1, c2, r2):
