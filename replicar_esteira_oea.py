@@ -46,6 +46,13 @@ def safe_call(fn, desc="chamada API"):
             wait = BASE_SLEEP * i
             print(f"⚠️  {desc} falhou ({status}). Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s…")
             time.sleep(wait)
+        except OSError as e:
+            # erros de rede/conexao (requests herda de OSError) — transientes
+            if i == MAX_API_RETRIES:
+                raise
+            wait = BASE_SLEEP * i
+            print(f"⚠️  Erro de rede na {desc}: {e}. Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s…")
+            time.sleep(wait)
     raise RuntimeError(f"Falhou após {MAX_API_RETRIES} tentativas: {desc}")
 
 def auth():

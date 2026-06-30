@@ -98,17 +98,25 @@ def download_file_content(drive, file_id: str) -> bytes:
     return fh.getvalue()
 
 # ===================== SHEETS HELPERS =====================
+RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
 def safe_call(fn, desc="chamada API"):
     for i in range(1, MAX_API_RETRIES + 1):
         try:
             return fn()
         except APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status not in RETRYABLE_STATUS or i == MAX_API_RETRIES:
+                raise  # erro não-transiente (ex.: 400/403/404) — não adianta retentar
             wait = BASE_SLEEP * i
-            print(f"⚠️  Falha na {desc}: {e}. Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s...")
+            print(f"⚠️  Falha na {desc} ({status}). Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s...")
             time.sleep(wait)
-        except Exception as e:
+        except OSError as e:
+            # erros de rede/conexao (requests herda de OSError) — transientes
+            if i == MAX_API_RETRIES:
+                raise
             wait = BASE_SLEEP * i
-            print(f"⚠️  Erro inesperado na {desc}: {e}. Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s...")
+            print(f"⚠️  Erro de rede na {desc}: {e}. Tentativa {i}/{MAX_API_RETRIES}. Aguardando {wait:.1f}s...")
             time.sleep(wait)
     raise RuntimeError(f"Falhou: {desc}")
 
@@ -154,7 +162,7 @@ def parse_to_datetime(val: str):
     for fmt in DATE_PATTERNS:
         try:
             return datetime.strptime(s2, fmt)
-        except:
+        except ValueError:
             pass
     m = re.match(r"^\s*(\d{1,2})/(\d{1,2})/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*$", s2)
     if m:
@@ -162,7 +170,7 @@ def parse_to_datetime(val: str):
         hh = int(m.group(4) or 0); mi = int(m.group(5) or 0); ss = int(m.group(6) or 0)
         try:
             return datetime(yyyy, mm, dd, hh, mi, ss)
-        except:
+        except ValueError:
             return None
     return None
 
@@ -182,7 +190,7 @@ def to_float_br_us(val: str):
     s2 = s2.replace(",", ".")
     try:
         return float(s2)
-    except:
+    except ValueError:
         return None
 
 # ===================== TIMESTAMP RESUMO (A2, dd/mm/yyyy HH:mm) =====================

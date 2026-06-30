@@ -92,10 +92,7 @@ def list_month_files(drive) -> List[Tuple[str, str, str]]:
         if not page_token:
             break
 
-    print("📝 Arquivos encontrados (todos):")
-    for nm in sorted(all_names_debug):
-        print("   •", nm)
-    print("\n📝 Arquivos que casaram com MM-YYYY:")
+    print(f"📝 {len(all_names_debug)} arquivos na pasta; {len(results)} casaram com MM-YYYY:")
     for nm, _, _ in sorted(results):
         print("   ✓", nm)
     print()
